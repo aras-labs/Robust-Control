@@ -1,0 +1,171 @@
+%% =========================================================================
+%  space_shuttle.m - H∞ Control for Space Shuttle Flight Dynamics
+% =========================================================================
+%  This script models flight dynamics and control for a space shuttle.
+%  - Simulates actuators, sensor noise, and pilot input.
+%  - Designs an H∞ controller for flight stability.
+%  - Uses µ-analysis to evaluate robustness against disturbances.
+%
+%  System Description:
+%  
+%  Aircraft Nominal Model:
+%    - 4 States, 7 Outputs, 6 Inputs
+%  
+%  Actuator Models:
+%    - Rudder and Elevon models with delay dynamics
+%
+%  Weighting Functions:
+%    - Wind Gust
+%    - Sensor Noise
+%    - Pilot Command
+%    - Error and Actuator Weightings
+% =========================================================================
+
+%% 1. Define Aircraft Model (SSLAFCS)
+clear all
+clc
+
+% State-space matrices for the aircraft dynamics
+A = [-0.0946   0.141    -0.99   0.0364;
+     -3.59   -0.428    0.281     0;
+      0.395  -0.0126   -0.0814    0;
+       0        1       -0.141    0];
+
+B = [-0.0124   0.0102   -0.000000109;
+      6.57     1.26     -0.00000413;
+      0.378    -0.256    0.000000453;
+        0         0          0];
+
+C = [ 0  1  0  0;
+      0  0  1  0;
+    -68 -1.74 -4.06 -3.72e-5;
+      0  0  0  1];
+
+% Additional matrices for uncertainty and performance evaluation
+Bp = [ 0.0128     0       0;
+         0     -0.0311   -3.12;
+         0      -0.19    -0.0644;
+         0        0        0];
+
+Cp = [1 0 0 0; 0 0 0 0; 0 0 0 0];
+D12 = [0 0 0.00000115; 1 0 0; 0 1 0];
+D21 = [zeros(2,3); 11.1 -11.1 -11.1; 0 0 0];
+D22 = [zeros(2,3); 26.7 -2.95 -0.0000781; 0 0 0];
+
+% Construct system using `pck`
+acnom = pck(A, [Bp B], [Cp; C], [zeros(3,3) D12; D21 D22]);
+
+%%%% =========================================================================
+%  2. Define Actuator Models
+%%%% =========================================================================
+% Define rudder and elevon actuator dynamics
+wrud = 21.0; zetarud = 0.75;
+wele = 14.0; zetaele = 0.72;
+wdel = 173.0; zetadel = 0.866;
+
+% Delay approximation transfer function
+delaytf = nd2sys([1 -2*zetadel*wdel wdel*wdel], [1 2*zetadel*wdel wdel*wdel]);
+
+% Rudder actuator system
+actrud = mmult(nd2sys([wrud^2 0], [1 2*zetarud*wrud wrud^2]), delaytf);
+
+% Elevon actuator system
+actele = mmult(nd2sys([wele^2 0], [1 2*zetaele*wele wele^2]), delaytf);
+
+%%%% =========================================================================
+%  3. Define Weighting Functions
+%%%% =========================================================================
+% Wind disturbance
+wgust = nd2sys([.5 1], [1 1], 30);
+
+% Sensor noise
+wr = nd2sys([100 1], [2 1], .0003);
+wp = wr;
+wphi = nd2sys([100 1], [.5 1], 0.0007);
+wny = nd2sys([20 1], [.1 1], .25);
+wnoise = daug(wp, wr, wny, wphi);
+
+% Pilot command weighting
+wphicmd = nd2sys([.5 1], [2 1], .5);
+
+% Actuator weighting
+wact = diag([4 1 .005 2 .2 .009]);
+
+% Ideal response model
+wmod = 1.2; zmod = .7;
+idmod = nd2sys(wmod^2, [1 2*zmod*wmod wmod^2]);
+
+% Performance variables
+nyerr = nd2sys([1 1], [10 1], .8);
+cterr = nd2sys([1 1], [100 1], 500);
+baerr = nd2sys([1 1], [100 1], 250);
+fix = [0 0 1 0 0; 0 1 0 -0.037 0; 0 0 0 1 -1];
+wperf = mmult(daug(nyerr, cterr, baerr), fix);
+
+%%%% =========================================================================
+%  4. System Interconnection
+%%%% =========================================================================
+systemnames = 'acnom wr wl wnoise wact wgust wphicmd wperf idmod actele actrud';
+inputvar = '[pertin{9}; noise{4}; gust; comd; elec; rudc]';
+outputvar = '[wr; wperf; wact; wphicmd; acnom(4:7) + wnoise]';
+sysoutname = 'olic';
+sysic
+
+disp('The Interconnection Structure is in "olic"')
+minfo(olic)
+
+%%%% =========================================================================
+%  5. H∞ Controller Design
+%%%% =========================================================================
+olic_h = sel(olic, [10:23], [10:17]);
+k_h = hinfsyn(olic_h, 5, 2, 0, 1, 0.01, 2);
+
+%%%% =========================================================================
+%  6. Load and Compare Controllers
+%%%% =========================================================================
+load shutcont  % Load µ-controller and another trade-off controller
+minfo(k_x)
+minfo(k_mu)
+
+%%%% =========================================================================
+%  7. Compute Frequency Response of Controllers
+%%%% =========================================================================
+omega = logspace(-2, 3, 50);
+clp_h = starp(olic, k_h, 5, 2);
+clp_x = starp(olic, k_x, 5, 2);
+clp_mu = starp(olic, k_mu, 5, 2);
+
+clp_hg = frsp(clp_h, omega);
+clp_xg = frsp(clp_x, omega);
+clp_mug = frsp(clp_mu, omega);
+
+% Nominal performance plot
+vplot('liv,m', vnorm(sel(clp_hg, [10:18], [10:15])), '-.', ...
+               vnorm(sel(clp_xg, [10:18], [10:15])), '--', ...
+               vnorm(sel(clp_mug, [10:18], [10:15])), '-');
+grid; title('Nominal Performance: All Controllers')
+legend('H∞', 'H_x', 'µ')
+
+pause
+
+%%%% =========================================================================
+%  8. Robust Stability Analysis
+%%%% =========================================================================
+delsetrs = ones(9,2);
+clp_hgrs = sel(clp_hg, 1:9, 1:9);
+bnds_h = mu(clp_hgrs, delsetrs);
+
+% Robust performance analysis
+delsetrp = [delsetrs; 6 9];
+bnds_h = mu(clp_hg, delsetrp);
+
+vplot('liv,d', bnds_h, '-.r');
+grid; title('Robust Stability of Closed-Loop System')
+legend('H∞')
+
+pause
+
+%%%% =========================================================================
+%  9. Simulation Preparation
+%%%% =========================================================================
+disp('Run mk_olsim to continue with GUI-based simulations.')

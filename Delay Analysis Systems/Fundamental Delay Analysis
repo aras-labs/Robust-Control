@@ -1,0 +1,45 @@
+%% =========================================================================
+%  delay.m - Fundamental Analysis of Time Delay Effects
+% =========================================================================
+%  This script analyzes the influence of different time delays on the 
+%  frequency response of a dynamical system. The effect of varying delay
+%  values is visualized using Bode plots and logarithmic magnitude plots.
+% =========================================================================
+
+%% 1. Define System Parameters
+clear all
+clc
+
+tau1 = 0.1;
+tau2 = 0.2;
+w = logspace(-1, 2, 200);  % Frequency range
+
+%%%% =========================================================================
+%  2. Define Plant Transfer Function with Delays
+%%%% =========================================================================
+p0 = 1 ./ (1j * w) ./ (1j * w + 1);
+p1 = exp(-tau1 * 1j * w) .* p0;
+W1 = abs(p0 ./ p1 - 1);
+p2 = exp(-tau2 * 1j * w) .* p0;
+W2 = abs(p0 ./ p2 - 1);
+
+%%%% =========================================================================
+%  3. Define Sensitivity Weighting Function
+%%%% =========================================================================
+tau = 1 / 10;
+numerator = 2.4 * tau * [1 0];
+denominator = [tau 1];
+
+% Compute Bode Magnitude Response
+[mag, ph] = bode(numerator, denominator, w);
+
+%%%% =========================================================================
+%  4. Plot Frequency Response
+%%%% =========================================================================
+semilogx(w, 20 * log10(W1), ':', ...
+         w, 20 * log10(W2), '--', ...
+         w, 20 * log10(mag)), grid
+title('Effect of Time Delay on Frequency Response')
+xlabel('Frequency (rad/sec)')
+ylabel('Magnitude (dB)')
+legend('W1 (tau1=0.1)', 'W2 (tau2=0.2)', 'Bode Magnitude Response')

@@ -1,0 +1,108 @@
+%% =========================================================================
+%  mu_analyse.m - Robustness Evaluation with Mu-Analysis
+% =========================================================================
+%  This script evaluates the robustness of a control system using µ-analysis.
+%  - Constructs system interconnections.
+%  - Uses `mu()` to compute robustness bounds.
+%  - Compares performance under uncertain conditions.
+%
+%  System Equations:
+%  
+%       1
+% G(s) = -----
+%       (s - 1)
+%
+% Uncertainty Weighting Function:
+%         0.5s + 1
+% Wu(s) = --------
+%         0.03125s + 1
+%
+% Performance Weighting Function:
+%         0.25s + 0.6
+% Wp(s) = ------------
+%          s + 0.006
+%
+% Controller 1:
+%         0.9s + 1
+% K1(s) = --------
+%            s
+%
+% Controller 2:
+%         2.8s + 1
+% K2(s) = --------
+%            s
+% =========================================================================
+
+%% 1. Define System Parameters
+clear all
+clc
+
+%%%% =========================================================================
+%  2. Define Plant and Weighting Functions
+%%%% =========================================================================
+G = nd2sys(1, [1 -1]);  % Plant transfer function
+
+Wu = nd2sys([0.5 1], [0.03125 1], 0.25);  % Uncertainty weighting function
+
+Wp = nd2sys([0.25 0.6], [1 0.006]);  % Performance weighting function
+
+%%%% =========================================================================
+%  3. Define System Interconnections
+%%%% =========================================================================
+systemnames = 'G Wu Wp';
+sysoutname = 'P';
+inputvar = '[ z; d; u ]';
+input_to_G = '[ z + u ]';
+input_to_Wu = '[ u ]';
+input_to_Wp = '[ d + G ]';
+outputvar = '[ Wu; Wp; G + d ]';
+cleanupsysic = 'yes';
+sysic
+
+%%%% =========================================================================
+%  4. Define Controllers
+%%%% =========================================================================
+K1 = nd2sys([0.9 1], [1 0], -10);  % Controller 1
+
+K2 = nd2sys([2.8 1], [1 0], -1);   % Controller 2
+
+%%%% =========================================================================
+%  5. Compute Closed-Loop Systems
+%%%% =========================================================================
+omega = logspace(-2, 2, 80);
+M1 = starp(P, K1);
+M2 = starp(P, K2);
+M1g = frsp(M1, omega);
+M2g = frsp(M2, omega);
+
+%%%% =========================================================================
+%  6. Perform Nominal Performance Analysis
+%%%% =========================================================================
+figure;
+subplot(1,2,1)
+vplot('liv,m', vnorm(sel(M1g,2,2)), '-', ...
+               vnorm(sel(M2g,2,2)), '--', ...
+               vnorm(sel(M1g,1,1)), '.', 1, '-.')
+axis([0.1 1000 0 2])
+xlabel('Frequency (rad/sec)')
+title('Nominal Performance')
+grid on;
+
+pause(1)
+
+%%%% =========================================================================
+%  7. Perform Robust Performance Analysis
+%%%% =========================================================================
+uncblk = [1 1];
+fictblk = [1 1];
+deltaset = [uncblk; fictblk];
+
+bnds1 = mu(M1g, deltaset);
+bnds2 = mu(M2g, deltaset);
+
+subplot(1,2,2)
+vplot('liv,m', bnds1, '-', bnds2, '--', 1, '-.')
+axis([0.1 1000 0 2])
+xlabel('Frequency (rad/sec)')
+title('Robust Performance')
+grid on;

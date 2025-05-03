@@ -1,0 +1,165 @@
+%% =========================================================================
+%  robust_st.m - Robust Stability Analysis with H∞ Control
+% =========================================================================
+%  This script evaluates the robust stability of a system using H∞ control.
+%  - Constructs an augmented plant model.
+%  - Performs frequency response analysis.
+%  - Designs an H∞ controller with `hinfsyn` and evaluates stability.
+%
+%  System Equations:
+%                         1	    
+%       Plant  =   ------------------
+%                    (s - 1)(s - 2)
+%
+%                 (s + 1)^2
+%       Wt   =  ------------
+%                    25
+% =========================================================================
+
+%% 1. Define System Parameters
+clear all
+clc
+
+%%%% =========================================================================
+%  2. Define Plant Transfer Function and Weighting Functions
+%%%% =========================================================================
+% Plant Transfer Function:
+numerator_plant = [1];
+denominator_plant = conv([1 -1], [1 -2]);
+
+% Weighting function W_t:
+numerator_wt = [1 2 1];
+denominator_wt = 25;
+
+% Augmented plant transfer function: P(s) * Wt(s)
+numerator_aug = numerator_wt;
+denominator_aug = denominator_wt * denominator_plant;
+
+% Convert systems to Mu-synthesis format
+plant = nd2sys(numerator_plant, denominator_plant);
+wt = nd2sys(numerator_wt, denominator_wt);
+aug_pl = nd2sys(numerator_aug, denominator_aug);
+
+%%%% =========================================================================
+%  3. Frequency Response Analysis
+%%%% =========================================================================
+omega = logspace(-1, 2, 200);  % Frequency range
+wplantg = frsp(plant, omega);  % Frequency response of the plant
+
+% Plot the plant frequency response
+clf;
+subplot(111)
+vplot('liv,lm', wplantg)
+title('Plant Frequency Response')
+xlabel('Frequency (rad/s)')
+ylabel('Magnitude')
+
+pause  % Press any key to continue
+clc
+
+%%%% =========================================================================
+%  4. Define Interconnection Structure
+%%%% =========================================================================
+systemnames = 'aug_pl wt';
+inputvar = '[yref; u]';
+outputvar = '[aug_pl; yref - wt]';
+input_to_aug_pl = '[ u ]';
+input_to_wt = '[ aug_pl]';
+sysoutname = 'plant_ic';
+cleanupsysic = 'yes';
+sysic
+
+%%%% =========================================================================
+%  5. System Information and Minimal Realization
+%%%% =========================================================================
+minfo(plant_ic)
+spoles(plant_ic)
+
+pause  % Press any key to continue
+clc
+
+% Ensure minimal realization to avoid uncontrollable hidden modes
+[A, B, C, D] = unpck(plant_ic);
+[A, B, C, D] = minreal(A, B, C, D);
+plant_ic = pck(A, B, C, D);
+
+pause  % Press any key to continue
+clc 
+
+%%%% =========================================================================
+%  6. H∞ Controller Synthesis
+%%%% =========================================================================
+[k1, g1, gf1] = hinfsyn(plant_ic, 1, 1, 0.1, 2, 1e-4, 2);
+
+pause  % Press any key to continue
+clc 
+
+%%%% =========================================================================
+%  7. Controller Analysis
+%%%% =========================================================================
+% Check poles of the designed controller
+rifd(spoles(k1))
+
+pause  % Press any key to continue
+clc
+
+%%%% =========================================================================
+%  8. Bode Plot of Controller
+%%%% =========================================================================
+clf
+omega_3 = logspace(-2, 6, 300);
+k1g = frsp(k1, omega_3);
+title('Bode Plot of Controller, k1')
+xlabel('Frequency (rad/sec)')
+vplot('bode', k1g)
+
+pause  % Press any key to continue
+clc
+
+%%%% =========================================================================
+%  9. Closed-Loop Stability Check
+%%%% =========================================================================
+rifd(spoles(g1))
+
+pause  % Press any key to continue
+clc
+
+%%%% =========================================================================
+%  10. Closed-Loop Frequency Response
+%%%% =========================================================================
+omega_2 = logspace(0, 5, 50);
+g1g = frsp(g1, omega_2);
+
+% Find peak norm of the frequency response
+g1pk = pkvnorm(g1g);
+fprintf('\n Final Gamma: %g, \n Max Singular Value: %g \n\n', gf1, g1pk)
+
+% Singular value plot of the closed-loop system
+g1gs = vsvd(g1g);
+clf
+vplot('liv,m', g1g, g1gs)
+title('Singular Value and Sigma Plot of the H∞ Closed Loop')
+xlabel('Frequency (rad/s)')
+ylabel('Magnitude')
+grid;
+
+pause  % Press any key to continue
+clc
+
+%%%% =========================================================================
+%  11. Controller Transfer Function
+%%%% =========================================================================
+seesys(k1)
+
+% Convert state-space representation to transfer function
+[ak, bk, ck, dk] = unpck(k1);
+[numk, denk] = ss2tf(ak, bk, ck, dk);
+[zk, pk, kk] = tf2zp(numk, denk);
+
+% Print transfer function
+printsys(numk, denk, 's')
+
+%%%% =========================================================================
+%  12. End of Script
+%%%% =========================================================================
+disp('This concludes the example.')

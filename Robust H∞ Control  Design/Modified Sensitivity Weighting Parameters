@@ -1,0 +1,149 @@
+%% =========================================================================
+%  final_80_1.m - Modified Sensitivity Weighting Parameters
+% =========================================================================
+%  This script is similar to `final.m`, but it modifies the weighting functions 
+%  W_s and W_t to optimize performance under different frequency ranges.
+%  Robust performance is evaluated using `mu()` analysis.
+%
+%  System Equations:
+%                         10	    
+%       Plant  =   ------------------ * pade
+%                    (s - 1)(s + 1)
+%
+%                 2.4 s^2
+%       Wt   =  ------------
+%                ( s + 1 )^2
+% =========================================================================
+
+%% 1. Define System Parameters
+clear all
+tau = 1 / 2;  % Delay parameter
+w = logspace(-2, 2, 200);  % Frequency range
+
+%% 2. Plant Modeling
+p0 = 10 ./ (-w.^2 - 1);
+pm = p0 .* (-tau * 1j * w + 1) ./ (tau * 1j * w + 1);
+p1 = exp(-2 * tau * 1j * w) .* p0;
+W1 = abs(p1 ./ p0 - 1);
+W2 = abs(p1 ./ pm - 1);
+
+%% 3. Sensitivity Weighting Functions
+n1 = 2.4 * tau * [1 0];
+d1 = [tau 1];
+[m1, ~] = bode(n1, d1, w);
+
+tauf = 0.34;
+n2 = 0.09 * [1 0 0 0];
+d2 = conv([tauf^2 2 * tauf * 0.7 1], [tauf 1]);
+[m2, ~] = bode(n2, d2, w);
+
+%%%% =========================================================================
+%  Define Plant Models
+%%%% =========================================================================
+numerator_plant = 10 * [-tau 1];
+denominator_plant = conv([1 0 -1], [tau 1]);
+
+numerator_wt = n2;
+denominator_wt = d2;
+
+% Convert systems to Mu-synthesis format
+plant = nd2sys(numerator_plant, denominator_plant);
+wt = nd2sys(numerator_wt, denominator_wt);
+wu = nd2sys(1e-6, 1);
+
+%%%% =========================================================================
+%  Define Interconnection Structure
+%%%% =========================================================================
+systemnames = 'plant wt wu';
+inputvar = '[yref; u]';
+outputvar = '[wt; wu; yref-plant]';
+input_to_plant = '[ u ]';
+input_to_wt = '[plant]';
+input_to_wu = '[u]';
+sysoutname = 'plant_ic_st';
+cleanupsysic = 'yes';
+sysic
+
+[A, B, C, D] = unpck(plant_ic_st);
+[A, B, C, D] = minreal(A, B, C, D);
+plant_ic_st = pck(A, B, C, D);
+
+%%%% =========================================================================
+%  H∞ Controller Synthesis
+%%%% =========================================================================
+[k1, g1, gf1] = hinfsyn(plant_ic_st, 1, 1, 0.1, 5, 1e-4, 2);
+disp('---------->>>>>>>>>>> Robust Stability');
+
+%%%% =========================================================================
+%  Mixed Sensitivity Design
+%%%% =========================================================================
+numerator_ws = [1 0.8];
+denominator_ws = 25 * [1 0.008];
+
+ws = nd2sys(numerator_ws, denominator_ws);
+wu = nd2sys(1e-6, 1);
+
+systemnames = 'plant ws wt wu';
+inputvar = '[yd; u]';
+outputvar = '[wt; ws; wu ; yd-plant]';
+input_to_plant = '[ u ]';
+input_to_ws = '[ yd-plant ]';
+input_to_wt = '[ plant]';
+input_to_wu = '[u]';
+sysoutname = 'plant_ic';
+cleanupsysic = 'yes';
+sysic
+
+[A, B, C, D] = unpck(plant_ic);
+[A, B, C, D] = minreal(A, B, C, D);
+plant_ic = pck(A, B, C, D);
+
+[k1, g1, gf1] = hinfsyn(plant_ic, 1, 1, 0.1, 10, 0.001, 2);
+disp('---------->>>>>>>>>>> Mixed Sensitivity');
+
+%%%% =========================================================================
+%  Robust Performance Analysis using μ (Mu) Analysis
+%%%% =========================================================================
+systemnames = 'plant wt ws';
+inputvar = '[pout; yd; u]';
+outputvar = '[ u; ws; plant-yd ]';
+input_to_plant = '[ u + wt ]';
+input_to_wt = '[ pout ]';
+input_to_ws = '[ yd - plant]';
+sysoutname = 'himat_ic';
+cleanupsysic = 'yes';
+sysic
+
+[k1, clp1] = hinfsyn(himat_ic, 1, 1, 0.8, 50, 1e-1, 2);
+omega = logspace(-3, 3, 60);
+clp1g = frsp(clp1, omega);
+clp1gs = vsvd(clp1g); % Singular value calculation
+
+% Plot singular values
+vplot('liv,m', clp1gs), grid
+title('Singular Value Plot for the Closed-Loop System')
+xlabel('Frequency (rad/sec)')
+
+%%%% =========================================================================
+%  D-K Iteration for Robust Controller Optimization
+%%%% =========================================================================
+deltaset = [1 1; 1 1];
+clp_g1 = clp1g;
+[bnds1, pv1] = mu(clp_g1, deltaset);
+
+vplot('liv,m', vnorm(clp_g1), bnds1); grid
+title('Maximum Singular Value and Mu Plot');
+xlabel('Frequency (rad/sec)')
+
+% Perform D-K iteration
+DK_DEF_NAME = 'himat_def'; % Define DK iteration parameters
+dkit
+
+% Controller Order Reduction
+[k_dk5bal, hsv] = sysbal(k_dk5);
+[k_dk5red] = strunc(k_dk5bal, 7);
+clpred_7 = starp(himat_ic, k_dk5red);
+clpred_7g = frsp(clpred_7, OMEGA_DK);
+[bnds] = mu(clpred_7g, [1 1; 1 1], 'c');
+
+pkvnorm(sel(bnds, 1, 1))

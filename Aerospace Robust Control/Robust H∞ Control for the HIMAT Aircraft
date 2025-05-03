@@ -1,0 +1,108 @@
+%% =========================================================================
+%  ex_himat.m - Robust H∞ Control for the HIMAT Aircraft
+% =========================================================================
+%  This script designs a robust H∞ controller for the HIMAT aircraft.
+%  - Defines the aircraft's state-space model.
+%  - Uses `hinfsyn` for controller synthesis.
+%  - Performs µ-analysis and D-K iteration to optimize robustness.
+%
+%  System Description:
+%    - HIMAT Aircraft Model (Highly Maneuverable Aircraft Technology)
+%    - Actuator and disturbance weighting functions
+%    - Robust H∞ synthesis and performance evaluation
+% =========================================================================
+
+%% 1. Define Aircraft Model (HIMAT)
+clear all
+clc
+
+% HIMAT state-space model
+himat = [ ...
+   -0.0226  -36.6000  -18.9000  -32.1000         0         0    4.0000;
+         0   -1.9000    0.9830         0   -0.4140         0         0;
+    0.0123  -11.7000   -2.6300         0  -77.8000   22.4000         0;
+         0         0    1.0000         0         0         0         0;
+         0   57.3000         0         0         0         0         0;
+         0         0         0   57.3000         0         0         0;
+         0         0         0         0         0         0      -Inf];
+
+%%%% =========================================================================
+%  2. Define Weighting Functions
+%%%% =========================================================================
+% Uncertainty weight
+WDEL = nd2sys([50,5000], [1,10000]);
+WDEL = daug(WDEL, WDEL);
+
+% Performance weighting
+WP = nd2sys([0.5,1.5], [1,0.03]);
+WP = daug(WP, WP);
+
+%%%% =========================================================================
+%  3. Define System Interconnections
+%%%% =========================================================================
+systemnames = 'himat WDEL WP';
+inputvar = '[pert(2); dist(2); control(2)]';
+outputvar = '[ WDEL ; WP; himat + dist ]';
+input_to_himat = '[ control + pert ]';
+input_to_WDEL = '[ control ]';
+input_to_WP = '[ himat + dist ]';
+sysoutname = 'himat_ic';
+cleanupsysic = 'yes';
+sysic
+
+%%%% =========================================================================
+%  4. H∞ Controller Synthesis
+%%%% =========================================================================
+minfo(himat_ic);
+[k1, clp1] = hinfsyn(himat_ic, 2, 2, 0.8, 2, 1e-1, 2);
+
+%%%% =========================================================================
+%  5. Frequency Response Analysis
+%%%% =========================================================================
+minfo(k1)
+omega = logspace(-3, 3, 60);
+clp1g = frsp(clp1, omega);
+clp1gs = vsvd(clp1g);  % Singular value calculation
+
+figure;
+vplot('liv,m', clp1gs), grid
+title('Singular Value Plot for the Closed-Loop System')
+xlabel('Frequency (rad/sec)')
+
+pause  % Press any key to continue
+clc
+
+%%%% =========================================================================
+%  6. Robust Performance Analysis (µ-Analysis)
+%%%% =========================================================================
+deltaset = [2 2; 2 2];
+clp_g1 = clp1g;
+[bnds1, pv1] = mu(clp_g1, deltaset);
+
+figure;
+vplot('liv,m', vnorm(clp_g1), bnds1);
+grid
+title('Maximum Singular Value and µ Plot')
+xlabel('Frequency (rad/sec)')
+
+pause  % Press any key to continue
+clc
+
+%%%% =========================================================================
+%  7. Perform D-K Iteration for Robust Optimization
+%%%% =========================================================================
+% Set DK parameter 
+DK_DEF_NAME = 'himat_def'; % 3 iteration is set
+dkit
+
+clc
+
+%%%% =========================================================================
+%  8. Reduce Controller Order using Balanced Truncation
+%%%% =========================================================================
+[k_dk3bal, hsv] = sysbal(k_dk3);
+[k_dk3red] = strunc(k_dk3bal, 13);
+clpred_13 = starp(himat_ic, k_dk3red);
+clpred_13g = frsp(clpred_13, OMEGA_DK);
+[bnds] = mu(clpred_13g, [2 2; 2 2], 'c');
+pkvnorm(sel(bnds, 1, 1));

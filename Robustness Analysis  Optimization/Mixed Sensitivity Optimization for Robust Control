@@ -1,0 +1,121 @@
+%% =========================================================================
+%  mixed_sen1.m - Mixed Sensitivity Optimization for Robust Control
+% =========================================================================
+%  This script designs a robust control system using a combination of:
+%  - H∞ control to maximize robustness.
+%  - H2 control to minimize control effort.
+%  - Uses `hinfsyn` and `h2syn` for controller design.
+%
+%  System Equations:
+%
+%                   1   
+%   Plant  =  ---------------
+%              s^2 +0.2s + 1 
+%
+%	   	        10(s + 1)
+% 	  ws   =  -----------------
+%		        (s+0.01)(s + 10)
+%
+%	              2*(s+10)^2
+% 	  wt   =     ------------
+%		             1000 
+%
+%	  wu   =   1
+% =========================================================================
+
+%% 1. Define System Parameters
+clear all
+clc
+
+%%%% =========================================================================
+%  2. Define Plant State-Space Model
+%%%% =========================================================================
+An = [0   1   0   0;
+     -1 -.2   0   0;
+      0   0   0   1;
+     -1   0 -0.1 -10.01];
+
+Bn = [0 0;
+      0 1;
+      0 0;
+      1 0];
+
+Cn = [ 0     0    0.5  0.5;
+       0     0    0    0; 
+      .198 .0369 0    0;
+      -1    0    0    0];
+
+Dn = [0    0;
+      0    1;
+      0    2e-3;
+      1    0];
+
+% Convert state-space representation to system format
+plant_ic = pck(An, Bn, Cn, Dn);
+
+%%%% =========================================================================
+%  3. System Information and Minimal Realization
+%%%% =========================================================================
+minfo(plant_ic)
+spoles(plant_ic)
+
+pause  % Press any key to continue
+clc
+
+%%%% =========================================================================
+%  4. H∞ Controller Synthesis
+%%%% =========================================================================
+[k1, g1, gf1] = hinfsyn(plant_ic, 1, 1, 0.1, 2, 1e-4, 2);
+
+pause  % Press any key to continue
+clc 
+
+%%%% =========================================================================
+%  5. H2 Controller Synthesis
+%%%% =========================================================================
+% Syntax: [k,g,norms] = h2syn(plant, nmeas, ncon, ricmethod, quiet)
+[k2, g2, n2] = h2syn(plant_ic, 1, 1, 2, 1);
+norm2 = norm(n2, 2);
+
+disp('The 2-norm of objective function is:');
+disp(norm2);
+
+pause  % Press any key to continue
+clc 
+
+%%%% =========================================================================
+%  6. Bode Plot of Controllers
+%%%% =========================================================================
+clf
+omega = logspace(-2, 6, 200);
+k1_g = frsp(k1, omega);
+k2_g = frsp(k2, omega);
+vplot('bode', k1_g, k2_g), grid
+
+title('Magnitude Plot of Controllers: H∞ and H2')
+xlabel('Frequency (rad/sec)')
+
+pause  % Press any key to continue
+clc
+
+%%%% =========================================================================
+%  7. Controller Transfer Functions
+%%%% =========================================================================
+% H∞ Controller
+[ak, bk, ck, dk] = unpck(k1);
+[numk1, denk1] = ss2tf(ak, bk, ck, dk);
+[z1, p1, k1] = ss2zp(ak, bk, ck, dk);
+
+disp('H∞ Controller Transfer Function:')
+printsys(numk1, denk1, 's')
+
+% H2 Controller
+[ak2, bk2, ck2, dk2] = unpck(k2);
+[numk2, denk2] = ss2tf(ak2, bk2, ck2, dk2);
+[z2, p2, k2] = ss2zp(ak2, bk2, ck2, dk2);
+
+disp('H2 Controller Transfer Function:')
+printsys(numk2, denk2, 's')
+
+pause  % Press any key to continue
+clc

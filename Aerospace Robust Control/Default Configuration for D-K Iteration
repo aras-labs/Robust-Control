@@ -1,0 +1,37 @@
+%% =========================================================================
+%  himat_def.m - Default Configuration for D-K Iteration
+% =========================================================================
+%  This script provides user-defined parameters for D-K iteration in the 
+%  HIMAT aircraft's robust control design.
+%  - Defines uncertainty block structure for µ-analysis.
+%  - Specifies the number of measurements and control inputs.
+%  - Sets frequency range and iteration limits for optimization.
+% =========================================================================
+
+%% 1. Define Nominal Plant Interconnection Structure
+NOMINAL_DK = himat_ic;   % Nominal interconnection for D-K iteration
+
+%% 2. Define Number of Measurements and Control Inputs
+NMEAS_DK = 1;            % Number of measured outputs
+NCONT_DK = 1;            % Number of control inputs
+
+%% 3. Define Block Structure for µ-Analysis
+BLK_DK = [1 1; 1 1];    % Uncertainty block structure
+
+%% 4. Define Frequency Range for D-K Iteration
+OMEGA_DK = logspace(-3, 3, 60);   % Logarithmic frequency range
+
+%% 5. Define Automatic Iteration Parameters
+% AUTOINFO_DK: [Start Iteration, End Iteration, Visual Flag, Scaling Orders]
+%   - Start Iteration: 1
+%   - End Iteration: 5
+%   - Visual Flag: 1 (Show results)
+%   - Scaling Order: 5 (Maximum order of dynamic D-scalings)
+AUTOINFO_DK = [1 5 1 5 5];
+
+%% 6. Define Naming Convention for Exported Variables
+NAME_DK = '';  % No suffix added to exported variables
+
+%% =========================================================================
+%  End of himat_def.m
+% =========================================================================

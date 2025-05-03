@@ -1,0 +1,116 @@
+%% =========================================================================
+%  robust_st2.m - Alternative Robust Stability Model
+% =========================================================================
+%  This script explores an alternative system configuration for robust stability.
+%  - Uses a different plant model while maintaining the H∞ control structure.
+%  - Evaluates system robustness using frequency response analysis.
+%  - Compares results with `robust_st.m`.
+%
+%  System Equations:
+%                       ( s - 1 )	    
+%       Plant  =   ------------------
+%                    (s + 1)(s - 0.2)
+%
+%                 (s + 0.1)
+%       Wt   =  ------------
+%                  (s + 1)
+% =========================================================================
+
+%% 1. Define System Parameters
+clear all
+clc
+
+%%%% =========================================================================
+%  2. Define Plant Transfer Function and Weighting Functions
+%%%% =========================================================================
+% Plant Transfer Function:
+numerator_plant = [1 -1];
+denominator_plant = conv([1 1], [1 -0.2]);
+
+% Weighting function W_t:
+numerator_wt = [1 0.1];
+denominator_wt = [1 1];
+
+% Convert systems to Mu-synthesis format
+plant = nd2sys(numerator_plant, denominator_plant);
+wt = nd2sys(numerator_wt, denominator_wt);
+wu = nd2sys(1e-6, 1);
+
+%%%% =========================================================================
+%  3. Define Interconnection Structure
+%%%% =========================================================================
+systemnames = 'plant wt wu';
+inputvar = '[yref; u]';
+outputvar = '[wt; wu; yref-plant]';
+input_to_plant = '[ u ]';
+input_to_wt = '[plant]';
+input_to_wu = '[u]';
+sysoutname = 'plant_ic';
+cleanupsysic = 'yes';
+sysic
+
+%%%% =========================================================================
+%  4. System Information and Minimal Realization
+%%%% =========================================================================
+minfo(plant_ic)
+spoles(plant_ic)
+
+pause  % Press any key to continue
+clc
+
+% Ensure minimal realization to avoid uncontrollable hidden modes
+[A, B, C, D] = unpck(plant_ic);
+[A, B, C, D] = minreal(A, B, C, D);
+plant_ic = pck(A, B, C, D);
+
+pause  % Press any key to continue
+clc 
+
+%%%% =========================================================================
+%  5. H∞ Controller Synthesis
+%%%% =========================================================================
+[k1, g1, gf1] = hinfsyn(plant_ic, 1, 1, 0.1, 8, 1e-4, 2);
+
+pause  % Press any key to continue
+
+%%%% =========================================================================
+%  6. Bode Plot of Controller
+%%%% =========================================================================
+clf
+omega = logspace(-2, 6, 300);
+k1g = frsp(k1, omega);
+title('Bode Plot of Controller, k1')
+xlabel('Frequency (rad/sec)')
+vplot('bode', k1g)
+
+pause  % Press any key to continue
+clc
+
+%%%% =========================================================================
+%  7. Frequency Response and Peak Norm Analysis
+%%%% =========================================================================
+omega_2 = logspace(0, 5, 50);
+g1g = frsp(g1, omega_2);
+
+% Find peak norm of the frequency response
+g1pk = pkvnorm(g1g);
+fprintf('\n Final Gamma: %g, \n Max Singular Value: %g \n\n', gf1, g1pk)
+
+%%%% =========================================================================
+%  8. Controller Transfer Function
+%%%% =========================================================================
+g1gs = vsvd(g1g);
+seesys(k1)
+
+% Convert state-space representation to transfer function
+[ak, bk, ck, dk] = unpck(k1);
+[numk, denk] = ss2tf(ak, bk, ck, dk);
+[zk, pk, kk] = tf2zp(numk, denk);
+
+% Print transfer function
+printsys(numk, denk, 's')
+
+%%%% =========================================================================
+%  9. End of Script
+%%%% =========================================================================
+disp('This concludes the example.')
