@@ -1,5 +1,4 @@
 # Robust H∞ Control Repository 📚🔧
-[![kosarAmin](https://img.shields.io/badge/GitHub-kosarAmin-blue?logo=github)](https://github.com/kosarAmin)
 
 Welcome to the **Robust H∞ Control** repository – the companion resource for the book:
 
